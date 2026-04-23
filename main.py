@@ -2,20 +2,13 @@
 main.py  ·  Frankfurt Theaterlust Telegram Bot
 ══════════════════════════════════════════════
 
-Run:  python main.py
+Google Cloud Run / Cloud Functions Version (Webhook-Modus)
 
 Setup:
-  1. Create a bot with @BotFather on Telegram and copy the token.
-  2. Put  TELEGRAM_BOT_TOKEN=your_token  in a .env file next to this script.
-  3. pip install python-telegram-bot python-dotenv
-  4. python main.py
-
-Commands the bot understands:
-  /start       - Welcome message
-  /hilfe       - Help + list of theatres
-  /heute       - Today's programme
-  TT.MM.JJ     - Programme for a specific date  (e.g. 19.04.25)
-  TT.MM.JJJJ  - Also accepted               (e.g. 19.04.2025)
+  1. Bot-Token via Secret Manager oder Umgebungsvariable TELEGRAM_BOT_TOKEN
+  2. Nach dem Deploy Webhook registrieren:
+     https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<DEINE_URL>/webhook
+  3. pip install python-telegram-bot python-dotenv flask
 """
 
 import asyncio
@@ -23,11 +16,8 @@ import logging
 import os
 import re
 from datetime import date
-from pathlib import Path
-from scraper import fetch_all, format_results
-from theatres import THEATRES
 
-from dotenv import load_dotenv
+from flask import Flask, request, Response
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -38,10 +28,8 @@ from telegram.ext import (
     filters,
 )
 
-# -- Load .env ----------------------------------------------------------------
-# Looks for .env in the same folder as bot.py
-load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+from scraper import fetch_all, format_results
+from theatres import THEATRES
 
 # -- Logging ------------------------------------------------------------------
 logging.basicConfig(
@@ -49,6 +37,15 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
+
+# -- Config -------------------------------------------------------------------
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+if not TELEGRAM_BOT_TOKEN:
+    raise RuntimeError("TELEGRAM_BOT_TOKEN Umgebungsvariable fehlt.")
+
+# -- App-Initialisierung (einmalig beim Kaltstart) ----------------------------
+app_builder = Application.builder().token(TELEGRAM_BOT_TOKEN)
+telegram_app = app_builder.build()
 
 # -- Date parsing -------------------------------------------------------------
 _DATE_RE = re.compile(r"^\s*(\d{1,2})\.(\d{1,2})\.(\d{2,4})\s*$")
@@ -67,7 +64,7 @@ def _parse_date(text: str) -> date | None:
         return None
 
 
-# -- Handlers -----------------------------------------------------------------
+# -- Telegram Handler ---------------------------------------------------------
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
@@ -124,7 +121,6 @@ async def _send_programme(update: Update, target: date) -> None:
 
 
 def _split(text: str, limit: int = 4000) -> list[str]:
-    """Split long messages to stay within Telegram's 4096-char limit."""
     if len(text) <= limit:
         return [text]
     chunks, buf, buf_len = [], [], 0
@@ -139,30 +135,40 @@ def _split(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
-# -- Main ---------------------------------------------------------------------
+# -- Handler registrieren -----------------------------------------------------
+telegram_app.add_handler(CommandHandler("start", cmd_start))
+telegram_app.add_handler(CommandHandler(["help", "hilfe"], cmd_help))
+telegram_app.add_handler(CommandHandler("heute", cmd_heute))
+telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-async def main() -> None:
-    if not TELEGRAM_BOT_TOKEN:
-        raise RuntimeError(
-            "Kein Bot-Token gefunden.\n"
-            "Bitte TELEGRAM_BOT_TOKEN in der .env-Datei setzen."
-        )
-
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler(["help", "hilfe"], cmd_help))
-    app.add_handler(CommandHandler("heute", cmd_heute))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    logger.info("Bot läuft. Abbruch mit Ctrl-C.")
-
-    async with app:
-        await app.start()
-        await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        await asyncio.Event().wait()   # run forever until Ctrl-C
-        await app.updater.stop()
-        await app.stop()
+# -- Flask Web-Server (für Cloud Run / Cloud Functions) ----------------------
+flask_app = Flask(__name__)
 
 
+@flask_app.post("/webhook")
+def webhook():
+    """Telegram schickt jeden Update per POST hierher."""
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    asyncio.run(telegram_app.process_update(update))
+    return Response(status=200)
+
+
+@flask_app.get("/healthz")
+def health():
+    return "ok", 200
+
+
+# -- Lokaler Start (zum Testen) -----------------------------------------------
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Lokal mit Polling testen (kein Webhook nötig)
+    import asyncio
+
+    async def run_polling():
+        async with telegram_app:
+            await telegram_app.start()
+            await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+            await asyncio.Event().wait()
+            await telegram_app.updater.stop()
+            await telegram_app.stop()
+
+    asyncio.run(run_polling())
