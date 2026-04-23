@@ -158,17 +158,7 @@ def health():
     return "ok", 200
 
 
-# -- Lokaler Start (zum Testen) -----------------------------------------------
+# -- Start -----------------------------------------------
 if __name__ == "__main__":
-    # Lokal mit Polling testen (kein Webhook nötig)
-    import asyncio
-
-    async def run_polling():
-        async with telegram_app:
-            await telegram_app.start()
-            await telegram_app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-            await asyncio.Event().wait()
-            await telegram_app.updater.stop()
-            await telegram_app.stop()
-
-    asyncio.run(run_polling())
+    port = int(os.environ.get("PORT", 8080))
+    flask_app.run(host="0.0.0.0", port=port)
