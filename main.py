@@ -147,10 +147,17 @@ app = Flask(__name__)
 
 
 @app.post("/webhook")
-def webhook():
+async def webhook():
     """Telegram schickt jeden Update per POST hierher."""
+    # 1. Sicherstellen, dass die App initialisiert ist
+    if not telegram_app.updater_running:
+        await telegram_app.initialize()
+        await telegram_app.start()
+    
+    # 2. Update einlesen und verarbeiten
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-    asyncio.run(telegram_app.process_update(update))
+    await telegram_app.process_update(update)
+    
     return Response(status=200)
 
 
