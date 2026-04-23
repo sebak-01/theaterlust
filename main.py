@@ -142,10 +142,11 @@ telegram_app.add_handler(CommandHandler("heute", cmd_heute))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # -- Flask Web-Server (für Cloud Run / Cloud Functions) ----------------------
-flask_app = Flask(__name__)
+# No proper Flask App yet
+app = Flask(__name__)
 
 
-@flask_app.post("/webhook")
+@app.post("/webhook")
 def webhook():
     """Telegram schickt jeden Update per POST hierher."""
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
@@ -153,7 +154,7 @@ def webhook():
     return Response(status=200)
 
 
-@flask_app.get("/healthz")
+@app.get("/healthz")
 def health():
     return "ok", 200
 
@@ -161,4 +162,4 @@ def health():
 # -- Start -----------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    flask_app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
