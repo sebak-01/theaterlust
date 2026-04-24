@@ -374,16 +374,144 @@ def parse_dramatische_buehne(theatre_name: str, url: str, target: date) -> List[
 # Parser: Stalburg Theater
 # ─────────────────────────────────────────────────────────────────────────────
 
-# to be added
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Parser: Die Komödie
-# ─────────────────────────────────────────────────────────────────────────────
-
-# to be added
+def parse_stalburg(theatre_name: str, base_url: str, target: date) -> List[Performance]:
+    """
+    Page:   https://stalburg.de/programm/year:YYYY/month:MM
+    Format: Each event is a <li> containing:
+              <strong>  "Do,\n  23.04.2026"  </strong>
+              plain text "um\n  20:00 Uhr"
+              <h3><a href="/veranstaltungen/...">Title</a></h3>
+              <a href="https://stalburg-theater-ticketshop.reservix.de/...">Karten kaufen</a>
+    """
+    url = f"https://stalburg.de/programm/year:{target.year}/month:{target.month:02d}"
+    try:
+        soup = _get_soup(url)
+    except Exception as e:
+        logger.error("%s: %s", theatre_name, e)
+        return []
+ 
+    # Target date token as it appears on the page, e.g. "23.04.2026"
+    date_token = f"{target.day:02d}.{target.month:02d}.{target.year}"
+    performances = []
+ 
+    for li in soup.select("li"):
+        # --- DATE: find <strong> whose text contains the date token ---
+        strong = li.find("strong")
+        if not strong:
+            continue
+        if date_token not in strong.get_text():
+            continue
+ 
+        # --- TITLE: <h3><a> ---
+        h3 = li.find("h3")
+        if not h3:
+            continue
+        title_el = h3.find("a", href=True)
+        title = (title_el or h3).get_text(" ", strip=True)
+        # Clean up extra whitespace from multiline text
+        title = re.sub(r"\s+", " ", title).strip()
+ 
+        # --- TIME: "um HH:MM Uhr" in the li text ---
+        li_text = li.get_text(" ", strip=True)
+        time_str = _find_time(li_text, date_token)
+ 
+        # --- LINK: prefer ticket shop link, fall back to detail page ---
+        ticket_el = li.find("a", href=re.compile(r"reservix|eventim|adticket", re.I))
+        detail_el = title_el  # already found above
+        if ticket_el:
+            ticket_url = ticket_el["href"]
+        elif detail_el:
+            ticket_url = urljoin("https://stalburg.de", detail_el["href"])
+        else:
+            ticket_url = base_url
+ 
+        performances.append(Performance(theatre_name, title, time_str, ticket_url))
+ 
+    return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parser: Oper Frankfurt
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_oper_frankfurt(theatre_name: str, base_url: str, target: date) -> List[Performance]:
+    """
+    Page:   https://oper-frankfurt.de/de/spielplan/?datum=YYYY-MM&lang=100
+    Real HTML structure (confirmed via debug script):
+ 
+      <div class="repertoire-element clearfix">
+        <a href="macbeth_2/?id_datum=4554">          ← relative href, no /de/spielplan/ prefix
+          <div class="col col-date w-10">
+            Fr<span>24</span>                        ← day number in <span>
+          </div>
+          <div class="col col-element w-90">
+            <strong class="u-upper">...</strong>     ← holiday label (often empty)
+            <h3>Macbeth</h3>
+            <h4>Giuseppe Verdi</h4>                  ← composer / subtitle (optional)
+            <span class="meta">19.00 Uhr, Opernhaus</span>
+          </div>
+        </a>
+        <a href="https://...eventim...">Tickets</a>  ← sibling ticket link (optional)
+      </div>
+    """
+    url = f"https://oper-frankfurt.de/de/spielplan/?datum={target.year}-{target.month:02d}&lang=100"
+    try:
+        soup = _get_soup(url)
+    except Exception as e:
+        logger.error("%s: %s", theatre_name, e)
+        return []
+ 
+    performances = []
+    target_day_str = str(target.day)  # "4" or "24" — no zero-padding on the page
+ 
+    # Selector: <a> tags whose href contains ?id_datum= (relative hrefs on this page)
+    for a in soup.find_all("a", href=re.compile(r"\?id_datum=\d+")):
+ 
+        # --- DATE: day number lives in <span> inside <div class="col-date"> ---
+        date_div = a.find("div", class_="col-date")
+        if not date_div:
+            continue
+        day_span = date_div.find("span")
+        if not day_span:
+            continue
+        if day_span.get_text(strip=True) != target_day_str:
+            continue
+ 
+        # --- TITLE from <h3> ---
+        h3 = a.find("h3")
+        if not h3:
+            continue
+        title = re.sub(r"\s+", " ", h3.get_text(" ", strip=True)).strip()
+ 
+        # --- COMPOSER / SUBTITLE from <h4> (optional) ---
+        h4 = a.find("h4")
+        extra = re.sub(r"\s+", " ", h4.get_text(" ", strip=True)).strip() if h4 else None
+ 
+        # --- TIME + VENUE from <span class="meta"> e.g. "19.00 Uhr, Opernhaus" ---
+        meta = a.find("span", class_="meta")
+        meta_text = meta.get_text(strip=True) if meta else ""
+        time_str = _find_time(meta_text)
+        venue_match = re.search(r"Uhr\s*,\s*(.+)", meta_text)
+        venue = venue_match.group(1).strip() if venue_match else None
+        if venue:
+            extra = f"{extra} – {venue}" if extra else venue
+ 
+        # --- DETAIL URL: resolve relative href against base ---
+        detail_url = urljoin("https://oper-frankfurt.de/de/spielplan/", a["href"])
+ 
+        # --- TICKET LINK: sibling <a> pointing to eventim (same parent div) ---
+        ticket_url = detail_url
+        parent_div = a.parent
+        if parent_div:
+            ticket_a = parent_div.find("a", href=re.compile(r"eventim", re.I))
+            if ticket_a and ticket_a is not a:
+                ticket_url = ticket_a["href"]
+ 
+        performances.append(Performance(theatre_name, title, time_str, ticket_url, extra))
+ 
+    return _dedupe(performances)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parser: Die Komödie
 # ─────────────────────────────────────────────────────────────────────────────
 
 # to be added
@@ -398,9 +526,9 @@ _PARSERS = {
     "kellertheater":        parse_kellertheater,
     "english_theatre":      parse_english_theatre,
     "dramatische_buehne":   parse_dramatische_buehne,
+    "stalburg":             parse_stalburg,
+    "oper_frankfurt":       parse_oper_frankfurt
     # "komoedie":             parse_komoedie,
-    # "stalburg":             parse_stalburg,
-    # "oper_frankfurt":       parse_oper_frankfurt
 }
 
 

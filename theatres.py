@@ -87,7 +87,16 @@ THEATRES = [
         "url":    "https://www.diedramatischebuehne.de/programm/",
         "parser": "dramatische_buehne",
     },
-
+    {
+        "name":   "Stalburg Theater",
+        "url":    "https://stalburg.de/programm",
+        "parser": "stalburg",
+    },
+    {
+        "name":   "Oper Frankfurt",
+        "url":    "https://oper-frankfurt.de/de/spielplan/",
+        "parser": "oper_frankfurt",
+    },
 
 
     # ── Add new theatres below this line ────────────────────────────────────
@@ -103,14 +112,6 @@ THEATRES = [
     #     "url":    "https://diekomoedie.de/tickets/",
     #     "parser": "komoedie",
     # },
-    # {
-    #     "name":   "Stalburg Theater",
-    #     "url":    "https://stalburg.de/programm",
-    #     "parser": "stalburg",
-    # },
-    # {
-    #     "name":   "oper_frankfurt",
-    #     "url":    "https://oper-frankfurt.de/de/spielplan/",
-    #     "parser": "oper_frankfurt",
-    # },
+
+
 ]
