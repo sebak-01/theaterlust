@@ -82,7 +82,8 @@ async def send_reply(update: Update, text: str):
     await update.message.reply_text(
         text + hint,
         reply_markup=get_main_keyboard(),
-        parse_mode=ParseMode.MARKDOWN
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=True,
     )
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -102,8 +103,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "ℹ️ *Hilfe*\n\n"
         "Sende ein Datum: `TT.MM.JJ` oder `TT.MM.JJJJ`\n"
         "Beispiel: `19.04.25`\n\n"
-        "*/heute* – Heutiges Programm\n"
-        "*/hilfe* – Diese Nachricht\n\n"
+        "/heute – Heutiges Programm\n"
+        "/morgen – Programm für morgen\n"
+        "/hilfe – Diese Nachricht\n\n"
         f"*Durchsuchte Theater:*\n{theatre_list}"
     )
 
