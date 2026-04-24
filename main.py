@@ -168,6 +168,7 @@ def _split(text: str, limit: int = 4000) -> list[str]:
 telegram_app.add_handler(CommandHandler("start", cmd_start))
 telegram_app.add_handler(CommandHandler(["help", "hilfe"], cmd_help))
 telegram_app.add_handler(CommandHandler("heute", cmd_heute))
+telegram_app.add_handler(CommandHandler("morgen", cmd_morgen))
 telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
 # -- Flask Web-Server (für Cloud Run / Cloud Functions) ----------------------
