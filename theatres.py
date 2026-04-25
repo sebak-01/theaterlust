@@ -68,7 +68,7 @@ THEATRES = [
         "parser": "schauspiel_frankfurt",
     },
     {
-        "name":   "Volksbühne",
+        "name":   "Volksbühne im Großen Hirschgraben",
         "url":    "https://volksbuehne.net/termine",
         "parser": "volksbuehne",
     },
