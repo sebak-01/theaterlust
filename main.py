@@ -30,7 +30,7 @@ from theatres import THEATRES
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
-WEBHOOK_URL = os.environ.get("https://theaterlust-105161913183.europe-west1.run.app", "")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
 
 # -- Logging ------------------------------------------------------------------
 logging.basicConfig(
@@ -146,7 +146,6 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"*Durchsuchte Theater:*\n{theatre_list}",
         parse_mode=ParseMode.MARKDOWN,
     )
-    await send_reply(update, text)
 
 
 async def cmd_heute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -211,8 +210,6 @@ def _split(text: str, limit: int = 4000):
 
 # -- Main (Webhook for Cloud Run) --------------------------------------------
 
-import os
-
 async def main():
     app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
 
@@ -226,21 +223,30 @@ async def main():
     WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
     if not WEBHOOK_URL:
-        raise RuntimeError("WEBHOOK_URL fehlt")
+        raise RuntimeError("WEBHOOK_URL Umgebungsvariable fehlt")
 
     await app.initialize()
-    await app.start()
-
-    # 🔥 WICHTIG: Webhook explizit setzen
     await app.bot.set_webhook(WEBHOOK_URL)
 
-    # 🔥 HTTP Server starten
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path="",  # wichtig!
-        webhook_url=WEBHOOK_URL,
-    )
+    # Webhook-Updates manuell über Flask verarbeiten
+    from flask import Flask, request, Response
+    flask_app = Flask(__name__)
+
+    @flask_app.post("/")
+    def webhook():
+        update = Update.de_json(request.get_json(force=True), app.bot)
+        asyncio.run(app.process_update(update))
+        return Response(status=200)
+
+    @flask_app.get("/healthz")
+    def health():
+        return "ok", 200
+
+    flask_app.run(host="0.0.0.0", port=PORT)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
 if __name__ == "__main__":
     import asyncio
