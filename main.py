@@ -30,8 +30,7 @@ from theatres import THEATRES
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 
-# IMPORTANT: Set this to your Cloud Run URL
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
+WEBHOOK_URL = os.environ.get("https://theaterlust-105161913183.europe-west1.run.app", "")
 
 # -- Logging ------------------------------------------------------------------
 logging.basicConfig(
