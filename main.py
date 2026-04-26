@@ -11,7 +11,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from flask import Flask, request, Response
-from telegram import ReplyKeyboardMarkup, Update
+from telegram import ReplyKeyboardMarkup, Update, LinkPreviewOptions
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
