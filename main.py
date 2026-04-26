@@ -202,7 +202,7 @@ def _split(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
-# -- Telegram App (lazy) ------------------------------------------------------
+# -- Telegram App  ------------------------------------------------------
 _ptb_app = None
 
 
@@ -215,6 +215,15 @@ def get_ptb_app():
         _ptb_app.add_handler(CommandHandler("heute", cmd_heute))
         _ptb_app.add_handler(CommandHandler("morgen", cmd_morgen))
         _ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+        # App initialisieren
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_ptb_app.initialize())
+        finally:
+            loop.close()
+
     return _ptb_app
 
 
