@@ -222,7 +222,7 @@ def get_ptb_app():
 app = Flask(__name__)
 
 
-@app.post("/")
+@app.post("/webhook")
 def webhook():
     ptb = get_ptb_app()
     update = Update.de_json(request.get_json(force=True), ptb.bot)
