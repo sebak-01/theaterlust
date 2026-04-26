@@ -29,7 +29,7 @@ from theatres import THEATRES
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")  # ← FIX: war vorher falsch
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
 
 # -- Logging ------------------------------------------------------------------
 logging.basicConfig(
@@ -87,7 +87,13 @@ async def send_reply(update: Update, text: str):
 
 
 # -- Caching ------------------------------------------------------------------
-db = firestore.Client()
+_db = None
+
+def get_db():
+    global _db
+    if _db is None:
+        _db = firestore.Client()
+    return _db
 
 
 def _cache_key(target: date) -> str:
@@ -100,7 +106,7 @@ def _cache_expires(target: date) -> datetime:
 
 
 def get_cached(target: date) -> str | None:
-    doc = db.collection("cache").document(_cache_key(target)).get()
+    doc = get_db().collection("cache").document(_cache_key(target)).get()
     if not doc.exists:
         return None
     data = doc.to_dict()
@@ -110,7 +116,7 @@ def get_cached(target: date) -> str | None:
 
 
 def set_cached(target: date, message: str) -> None:
-    db.collection("cache").document(_cache_key(target)).set({
+    get_db().collection("cache").document(_cache_key(target)).set({
         "message": message,
         "expires": _cache_expires(target),
     })
@@ -138,7 +144,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*/hilfe*  – Diese Nachricht\n\n"
         f"*Durchsuchte Theater:*\n{theatre_list}"
     )
-    await send_reply(update, text)  # ← FIX: text war vorher nicht definiert
+    await send_reply(update, text)
 
 
 async def cmd_heute(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -196,8 +202,9 @@ def _split(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
-# -- Telegram App  -----------------------------------
+# -- Telegram App (lazy) ------------------------------------------------------
 _ptb_app = None
+
 
 def get_ptb_app():
     global _ptb_app
@@ -210,19 +217,28 @@ def get_ptb_app():
         _ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     return _ptb_app
 
+
 # -- Flask (Cloud Run HTTP Server) --------------------------------------------
 app = Flask(__name__)
+
 
 @app.post("/")
 def webhook():
     ptb = get_ptb_app()
     update = Update.de_json(request.get_json(force=True), ptb.bot)
-    asyncio.run(ptb.process_update(update))
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(ptb.process_update(update))
+    finally:
+        loop.close()
     return Response(status=200)
+
 
 @app.get("/healthz")
 def health():
     return "ok", 200
+
 
 # -- Start --------------------------------------------------------------------
 if __name__ == "__main__":
