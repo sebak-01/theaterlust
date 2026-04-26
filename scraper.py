@@ -182,7 +182,10 @@ def parse_volksbuehne(theatre_name: str, url: str, target: date) -> List[Perform
         logger.error("%s: %s", theatre_name, e)
         return []
 
+    # Exakter Match: "9.05.2026" aber nicht "29.05.2026"
     target_str = f"{target.day}.{target.month:02d}.{target.year}"
+    date_pattern = re.compile(rf"(?<!\d){re.escape(target_str)}(?!\d)")
+    
     performances = []
 
     for li in soup.select("li"):
@@ -190,7 +193,7 @@ def parse_volksbuehne(theatre_name: str, url: str, target: date) -> List[Perform
         if not headings:
             continue
         date_text = headings[0].get_text(strip=True)
-        if target_str not in date_text:
+        if not date_pattern.search(date_text):  # ← statt "not in"
             continue
 
         time_str = "?"
@@ -211,7 +214,6 @@ def parse_volksbuehne(theatre_name: str, url: str, target: date) -> List[Perform
                 venue_text = t.split("\n")[0].strip()[:60]
                 break
 
-        # Ticket link
         ticket_el = li.find("a", href=re.compile(r"reservix|eventim|ticketmaster", re.I))
         info_el   = li.find("a", href=re.compile(r"volksbuehne\.net/programm"))
         ticket_url = ticket_el["href"] if ticket_el else \
@@ -237,24 +239,28 @@ def parse_kellertheater(theatre_name: str, url: str, target: date) -> List[Perfo
 
     target_day = str(target.day)
     target_month = [
-        k for k, v in DE_MONTHS.items() if v == target.month and len(k) > 3
+        k for k, v in DE_MONTHS.items() if v == target.month and len(k) >= 3
     ][0].capitalize()
 
+    # Exakter Monatsname als Wort-Grenze
+    month_pattern = re.compile(rf"\b{re.escape(target_month)}\b", re.IGNORECASE)
+
     for row in soup.select("div.zeile"):
-        # --- DATE ---
+        # --- TAG: exakter Vergleich (war bereits korrekt) ---
         day_el = row.select_one(".news-day")
         if not day_el or day_el.get_text(strip=True) != target_day:
             continue
 
+        # --- MONAT: mit Wort-Grenzen ---
         month_text = row.get_text(" ", strip=True)
-        if target_month.lower() not in month_text.lower():
+        if not month_pattern.search(month_text):
             continue
 
-        # --- TIME ---
+        # --- UHRZEIT ---
         time_el = row.select_one(".news-content-left-colright b")
         time_str = _find_time(time_el.get_text(" ", strip=True)) if time_el else "?"
 
-        # --- TITLE ---
+        # --- TITEL ---
         title_el = row.select_one(".beschreibung big")
         if not title_el:
             continue
@@ -266,8 +272,7 @@ def parse_kellertheater(theatre_name: str, url: str, target: date) -> List[Perfo
 
         performances.append(Performance(theatre_name, title, time_str, ticket_url))
 
-    result = _dedupe(performances)
-    return result
+    return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parser: English Theatre Frankfurt
@@ -327,48 +332,51 @@ def parse_dramatische_buehne(theatre_name: str, url: str, target: date) -> List[
         soup = _get_soup(url)
     except Exception as e:
         logger.error("%s: %s", theatre_name, e)
-        # logger.error("DramatischeBühne: %s", e)
         return []
 
     performances = []
-    month_name = [k.capitalize() for k, v in DE_MONTHS.items() if v == target.month][0]
-    date_query = f"{target.day}. {month_name} {target.year}"
+    month_name = [k.capitalize() for k, v in DE_MONTHS.items() if v == target.month and len(k) >= 3][0]
+      
+    date_pattern = re.compile(
+        rf"(?<!\d){target.day}\.\s*{month_name}\s*{target.year}(?!\d)",
+        re.IGNORECASE
+    )
 
-    for element in soup.find_all(string=re.compile(re.escape(date_query))):
+    for element in soup.find_all(string=date_pattern):
         parent = element.parent
         full_text = parent.get_text(" ", strip=True)
+
+        if not date_pattern.search(full_text):
+            continue
 
         title_el = None
         curr = parent
         while curr and not title_el:
             title_el = curr.find_previous(["h2", "h3", "h1"])
             curr = curr.parent
-            if curr and curr.name == "body": break
-            
+            if curr and curr.name == "body":
+                break
+
         if not title_el:
             continue
-            
+
         title = title_el.get_text(strip=True)
 
         time_match = re.search(r"(\d{1,2}[:.]\d{2})\s*Uhr", full_text)
         time_str = time_match.group(1).replace(".", ":") if time_match else "?"
 
-        # EXTRA INFO: Capture the location (e.g., "Grüneburgpark")
         extra = None
         if "Frankfurt" in full_text:
-            # Splits at comma to get "Grüneburgpark" from "Frankfurt am Main, Grüneburgpark"
             parts = full_text.split(",")
             if len(parts) > 1:
                 extra = parts[-1].replace(".", "").strip()
 
-        # LINK: Find the link inside the title header or the nearest 'Reservieren' link
         link_el = title_el.find("a", href=True) or parent.find("a", href=True)
         detail_url = urljoin(url, link_el["href"]) if link_el else url
 
         performances.append(Performance(theatre_name, title, time_str, detail_url, extra))
 
     return _dedupe(performances)
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Parser: Stalburg Theater

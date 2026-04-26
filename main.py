@@ -183,7 +183,7 @@ async def _send_programme(update: Update, target: date) -> None:
         await update.message.reply_text(
             chunk,
             parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True,
+            link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
 
 
