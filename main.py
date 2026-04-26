@@ -1,9 +1,5 @@
 """
-main.py  ·  Frankfurt Theaterlust Telegram Bot
-"""
-
-"""
-main.py · Frankfurt Theaterlust Telegram Bot (Cloud Run)
+main.py  -  Frankfurt Theaterlust Telegram Bot
 """
 
 import asyncio
@@ -200,29 +196,33 @@ def _split(text: str, limit: int = 4000) -> list[str]:
     return chunks
 
 
-# -- Telegram App (einmalig beim Kaltstart) -----------------------------------
-ptb_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-ptb_app.add_handler(CommandHandler("start", cmd_start))
-ptb_app.add_handler(CommandHandler(["help", "hilfe"], cmd_help))
-ptb_app.add_handler(CommandHandler("heute", cmd_heute))
-ptb_app.add_handler(CommandHandler("morgen", cmd_morgen))
-ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+# -- Telegram App  -----------------------------------
+_ptb_app = None
+
+def get_ptb_app():
+    global _ptb_app
+    if _ptb_app is None:
+        _ptb_app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        _ptb_app.add_handler(CommandHandler("start", cmd_start))
+        _ptb_app.add_handler(CommandHandler(["help", "hilfe"], cmd_help))
+        _ptb_app.add_handler(CommandHandler("heute", cmd_heute))
+        _ptb_app.add_handler(CommandHandler("morgen", cmd_morgen))
+        _ptb_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    return _ptb_app
 
 # -- Flask (Cloud Run HTTP Server) --------------------------------------------
 app = Flask(__name__)
 
-
 @app.post("/")
 def webhook():
-    update = Update.de_json(request.get_json(force=True), ptb_app.bot)
-    asyncio.run(ptb_app.process_update(update))
+    ptb = get_ptb_app()
+    update = Update.de_json(request.get_json(force=True), ptb.bot)
+    asyncio.run(ptb.process_update(update))
     return Response(status=200)
-
 
 @app.get("/healthz")
 def health():
     return "ok", 200
-
 
 # -- Start --------------------------------------------------------------------
 if __name__ == "__main__":
