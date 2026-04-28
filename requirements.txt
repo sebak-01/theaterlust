@@ -8,4 +8,3 @@ gunicorn==23.0.0
 google-cloud-firestore
 google-auth
 httpx[asyncio]
-playwright==1.47.0
