@@ -383,14 +383,6 @@ def parse_dramatische_buehne(theatre_name: str, url: str, target: date) -> List[
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parse_stalburg(theatre_name: str, base_url: str, target: date) -> List[Performance]:
-    """
-    Page:   https://stalburg.de/programm/year:YYYY/month:MM
-    Format: Each event is a <li> containing:
-              <strong>  "Do,\n  23.04.2026"  </strong>
-              plain text "um\n  20:00 Uhr"
-              <h3><a href="/veranstaltungen/...">Title</a></h3>
-              <a href="https://stalburg-theater-ticketshop.reservix.de/...">Karten kaufen</a>
-    """
     url = f"https://stalburg.de/programm/year:{target.year}/month:{target.month:02d}"
     try:
         soup = _get_soup(url)
@@ -442,25 +434,6 @@ def parse_stalburg(theatre_name: str, base_url: str, target: date) -> List[Perfo
 # ─────────────────────────────────────────────────────────────────────────────
 
 def parse_oper_frankfurt(theatre_name: str, base_url: str, target: date) -> List[Performance]:
-    """
-    Page:   https://oper-frankfurt.de/de/spielplan/?datum=YYYY-MM&lang=100
-    Real HTML structure (confirmed via debug script):
- 
-      <div class="repertoire-element clearfix">
-        <a href="macbeth_2/?id_datum=4554">          ← relative href, no /de/spielplan/ prefix
-          <div class="col col-date w-10">
-            Fr<span>24</span>                        ← day number in <span>
-          </div>
-          <div class="col col-element w-90">
-            <strong class="u-upper">...</strong>     ← holiday label (often empty)
-            <h3>Macbeth</h3>
-            <h4>Giuseppe Verdi</h4>                  ← composer / subtitle (optional)
-            <span class="meta">19.00 Uhr, Opernhaus</span>
-          </div>
-        </a>
-        <a href="https://...eventim...">Tickets</a>  ← sibling ticket link (optional)
-      </div>
-    """
     url = f"https://oper-frankfurt.de/de/spielplan/?datum={target.year}-{target.month:02d}&lang=100"
     try:
         soup = _get_soup(url)
@@ -519,10 +492,67 @@ def parse_oper_frankfurt(theatre_name: str, base_url: str, target: date) -> List
     return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Parser: Die Komödie
+# Parser: Neues Theater Höchst
 # ─────────────────────────────────────────────────────────────────────────────
 
-# to be added
+def parse_neues_theater_hoechst(theatre_name: str, url: str, target: date) -> List[Performance]:
+    try:
+        soup = _get_soup(url)
+    except Exception as e:
+        logger.error("%s: %s", theatre_name, e)
+        return []
+
+    performances = []
+    target_str = target.strftime("%d.%m.%Y")  # z. B. "03.05.2026"
+
+    for row in soup.select("div.row.nth-content-list-item"):
+        # --- DATUM: Suche nach dem Ziel-Datum ---
+        date_span = row.select_one("span.nth-list-date")
+        if not date_span:
+            continue
+        event_date = date_span.get_text(strip=True)
+        if event_date != target_str:
+            continue
+
+        # --- UHRZEIT: Extrahiere Uhrzeit ---
+        time_span = row.select_one("span.nth-list-time")
+        time_str = _find_time(time_span.get_text(strip=True)) if time_span else "?"
+
+        # --- TITEL: Künstler + Programm ---
+        artist_el = row.select_one("h3.m-0")
+        artist_text = artist_el.get_text(strip=True) if artist_el else "?"
+
+        program_el = row.select_one("span.nth-list-event-program")
+        program_text = program_el.get_text(strip=True) if program_el else ""
+
+        # Titel kombinieren: Künstler + Programm (ohne HTML-Entities wie &quot;)
+        title = f"{artist_text} – {program_text}" if program_text else artist_text
+        title = title.replace("&quot;", '"')  # Ersetze HTML-Entities für Anführungszeichen
+
+        # --- TICKET-LINK: Direkter Link zum Ticket-Shop ---
+        ticket_link = None
+        ticket_button = row.find("a", {"target": "shop"})
+        if ticket_button and ticket_button.has_attr("href"):
+            ticket_link = ticket_button["href"]
+
+        # --- DETAIL-LINK: Link zur Veranstaltungseite (falls kein Ticket-Link) ---
+        detail_link = None
+        detail_button = row.find("a", href=re.compile(r"/tickets/alle-veranstaltungen/"))
+        if detail_button and detail_button.has_attr("href"):
+            detail_link = urljoin(url, detail_button["href"])
+
+        # --- FÜGE PERFORMANCE HINZU (ohne extra-Feld) ---
+        performances.append(
+            Performance(
+                theatre=theatre_name,
+                title=title,
+                time=time_str,
+                url=ticket_link or detail_link,  # Kein Fallback auf url, um Preview-Links zu vermeiden
+                extra=None  # Keine zusätzlichen Infos
+            )
+        )
+
+    return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher – maps parser name → function
@@ -535,8 +565,9 @@ _PARSERS = {
     "english_theatre":      parse_english_theatre,
     "dramatische_buehne":   parse_dramatische_buehne,
     "stalburg":             parse_stalburg,
-    "oper_frankfurt":       parse_oper_frankfurt
-    # "komoedie":             parse_komoedie,
+    "oper_frankfurt":       parse_oper_frankfurt,
+    "neues_theater_hoechst": parse_neues_theater_hoechst,
+    # "komoedie":             parse_komoedie
 }
 
 
