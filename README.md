@@ -57,3 +57,7 @@ Delete or comment out its entry in `theatres.py`.
 | Kellertheater Frankfurt | kellertheater-frankfurt.de/ |
 | Die Dramatische Bühne | diedramatischebuehne.de/programm/ |
 | English Theatre Frankfurt | english-theatre.de/tickets/buy-online/ |
+| Stalburg Theater | stalburg.de/programm |
+| Oper Frankfurt | oper-frankfurt.de/de/spielplan/ |
+| Neues Theater Höchst | neues-theater.de/tickets/alle-veranstaltungen |
+| Die Komödie | diekomoedie.de/tickets/ |

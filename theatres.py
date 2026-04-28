@@ -8,43 +8,7 @@ Each entry in THEATRES is a dict with three keys:
 
   name    – Display name shown in the Telegram message
   url     – The programme/schedule page to scrape
-  parser  – Which parsing strategy to use (see list below)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AVAILABLE PARSERS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-  "schauspiel_frankfurt"
-      Page:   /spielplan/kalender/YYYY-MM/
-      Format: "So., 19.04., 18.00" as plain text, title in <h3><a>
-
-  "volksbuehne"
-      Page:   /termine
-      Format: date in <h4> ("So 19.04.2026"), time in next <h4>
-
-  "kellertheater"
-      Page:   homepage
-      Format: day number + German month name in plain text
-
-  "komoedie"
-      Page:   /tickets/
-      Format: day number + month abbreviation in block containers
-
-  "dramatische_buehne"
-      Page:   /programm/
-      Format: "18. April 2026 - 20:00 Uhr" in <h1>
-
-#   "stalburg"
-#       Page:   /programm/
-#       Format: date in <strong>, time as "um HH:MM Uhr", title in <h3><a>
-
-#   "english_theatre"
-#       Page:   /tickets/
-#       Format: plain HTML <table>: date (DD.MM.YYYY) | time | event title
-
-#   "oper_frankfurt"
-#       Page: /de/spielplan
-#       Format: tbd
+  parser  – Which parsing strategy to use.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 HOW TO ADD A THEATRE
@@ -97,7 +61,15 @@ THEATRES = [
         "url":    "https://oper-frankfurt.de/de/spielplan/",
         "parser": "oper_frankfurt",
     },
-
+    {   "name":   "Neues Theater Höchst",
+        "url":    "https://www.neues-theater.de/tickets/alle-veranstaltungen",
+        "parser": "neues_theater_hoechst",
+    },
+    {
+        "name":   "Die Komödie",
+        "url":    "https://diekomoedie.de/tickets/",
+        "parser": "komoedie",
+    },
 
     # ── Add new theatres below this line ────────────────────────────────────
     #
@@ -107,11 +79,7 @@ THEATRES = [
     #     "parser": "volksbuehne",   # pick the closest matching parser
     # },
 
-    # {
-    #     "name":   "Die Komödie",
-    #     "url":    "https://diekomoedie.de/tickets/",
-    #     "parser": "komoedie",
-    # },
+
 
 
 ]
