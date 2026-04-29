@@ -65,11 +65,11 @@ THEATRES = [
         "url":    "https://www.neues-theater.de/tickets/alle-veranstaltungen",
         "parser": "neues_theater_hoechst",
     },
-    # {
-    #     "name":   "Die Komödie",
-    #     "url":    "https://diekomoedie.de/tickets/",
-    #     "parser": "komoedie",
-    # },
+    {
+        "name":   "Die Komödie",
+        "url":    "https://diekomoedie.de/tickets/",
+        "parser": "komoedie",
+    },
 
     # ── Add new theatres below this line ────────────────────────────────────
     #

@@ -9,6 +9,7 @@ To add a new parser, add a function here and reference it in theatres.py.
 import logging
 import re
 import concurrent.futures
+import json
 from dataclasses import dataclass
 from datetime import date
 from typing import List, Optional
@@ -555,6 +556,117 @@ def parse_neues_theater_hoechst(theatre_name: str, url: str, target: date) -> Li
     return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Parser: Die Komödie
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_komoedie(theatre_name: str, url: str, target: date) -> List[Performance]:
+    try:
+        soup = _get_soup(url)
+    except Exception as e:
+        logger.error(f"{theatre_name}: Fehler beim Laden der Seite: {e}")
+        return []
+
+    performances = []
+    target_str = target.strftime("%d.%m.%Y")
+
+    # --- 1. Versuche, die Daten aus dem statischen HTML zu extrahieren ---
+    # Suche nach JSON-Daten in <script>-Tags (MEC speichert die Events oft als JSON im HTML)
+    script_tags = soup.find_all("script", type="application/ld+json")
+    for script in script_tags:
+        try:
+            data = json.loads(script.string)
+            if isinstance(data, list):
+                for event in data:
+                    if event.get("@type") == "Event":
+                        # --- DATUM: Extrahiere Startdatum ---
+                        start_date = event.get("startDate", "")
+                        if not start_date:
+                            continue
+                        try:
+                            # Konvertiere ISO-Format (z. B. "2026-04-30T20:00:00+02:00") zu date
+                            event_date = datetime.fromisoformat(start_date.replace("Z", "+00:00")).date()
+                        except ValueError:
+                            continue
+
+                        if event_date != target:
+                            continue
+
+                        # --- UHRZEIT: Extrahiere Startzeit ---
+                        start_time = event.get("startDate", "")
+                        time_str = _find_time(start_time) if start_time else "?"
+
+                        # --- TITEL: Extrahiere Titel ---
+                        title = event.get("name", "?").strip()
+
+                        # --- TICKET-LINK: Extrahiere URL ---
+                        ticket_link = event.get("url")
+
+                        # --- LABEL: Extrahiere Label (falls vorhanden) ---
+                        extra = None
+
+                        performances.append(
+                            Performance(
+                                theatre=theatre_name,
+                                title=title,
+                                time=time_str,
+                                url=ticket_link,
+                                extra=extra
+                            )
+                        )
+        except (json.JSONDecodeError, AttributeError):
+            continue
+
+    # --- 2. Falls keine JSON-Daten gefunden wurden,Versuch mit dem statischen HTML ---
+    if not performances:
+        for event in soup.select("article.mec-event-article"):
+            date_div = event.select_one("div.mec-event-date")
+            if not date_div:
+                continue
+
+            date_text = date_div.get_text(" ", strip=True)
+            date_parts = date_text.split()
+            if len(date_parts) < 2:
+                continue
+
+            day = date_parts[0]
+            month_abbr = date_parts[1].rstrip(".")
+
+            month_num = None
+            for m_abbr, m_num in DE_MONTH_ABBR.items():
+                if month_abbr.lower() == m_abbr.lower():
+                    month_num = m_num
+                    break
+            if not month_num:
+                continue
+
+            if int(day) != target.day or month_num != target.month:
+                continue
+
+            time_span = event.select_one("span.mec-start-time")
+            time_str = _find_time(time_span.get_text(strip=True)) if time_span else "?"
+
+            title_el = event.select_one("h4.mec-event-title a")
+            title = title_el.get_text(strip=True) if title_el else "?"
+
+            ticket_button = event.select_one("a.mec-detail-button[href]")
+            ticket_link = ticket_button["href"] if ticket_button else None
+
+            label_span = event.select_one("span.mec-event-label-captions")
+            extra = label_span.get_text(strip=True) if label_span else None
+
+            performances.append(
+                Performance(
+                    theatre=theatre_name,
+                    title=title,
+                    time=time_str,
+                    url=ticket_link,
+                    extra=extra
+                )
+            )
+
+    return _dedupe(performances)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher – maps parser name → function
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -567,7 +679,7 @@ _PARSERS = {
     "stalburg":             parse_stalburg,
     "oper_frankfurt":       parse_oper_frankfurt,
     "neues_theater_hoechst": parse_neues_theater_hoechst,
-    # "komoedie":             parse_komoedie
+    "komoedie":             parse_komoedie
 }
 
 
