@@ -60,3 +60,4 @@ Delete or comment out its entry in `theatres.py`.
 | Stalburg Theater | stalburg.de/programm |
 | Oper Frankfurt | oper-frankfurt.de/de/spielplan/ |
 | Neues Theater Höchst | neues-theater.de/tickets/alle-veranstaltungen |
+| Die Komödie | diekomoedie.de/tickets/ |
