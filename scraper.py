@@ -441,55 +441,45 @@ def parse_oper_frankfurt(theatre_name: str, base_url: str, target: date) -> List
     except Exception as e:
         logger.error("%s: %s", theatre_name, e)
         return []
- 
+
     performances = []
-    target_day_str = str(target.day)  # "4" or "24" — no zero-padding on the page
- 
-    # Selector: <a> tags whose href contains ?id_datum= (relative hrefs on this page)
+    target_day_str = f"{target.day:02d}"
+
     for a in soup.find_all("a", href=re.compile(r"\?id_datum=\d+")):
- 
-        # --- DATE: day number lives in <span> inside <div class="col-date"> ---
-        date_div = a.find("div", class_="col-date")
-        if not date_div:
+        text = a.get_text(" ", strip=True)
+        tokens = text.split()
+        if len(tokens) < 2:
             continue
-        day_span = date_div.find("span")
-        if not day_span:
+        if tokens[1] != target_day_str:
             continue
-        if day_span.get_text(strip=True) != target_day_str:
-            continue
- 
-        # --- TITLE from <h3> ---
-        h3 = a.find("h3")
-        if not h3:
-            continue
-        title = re.sub(r"\s+", " ", h3.get_text(" ", strip=True)).strip()
- 
-        # --- COMPOSER / SUBTITLE from <h4> (optional) ---
-        h4 = a.find("h4")
-        extra = re.sub(r"\s+", " ", h4.get_text(" ", strip=True)).strip() if h4 else None
- 
-        # --- TIME + VENUE from <span class="meta"> e.g. "19.00 Uhr, Opernhaus" ---
-        meta = a.find("span", class_="meta")
-        meta_text = meta.get_text(strip=True) if meta else ""
-        time_str = _find_time(meta_text)
-        venue_match = re.search(r"Uhr\s*,\s*(.+)", meta_text)
+
+        # --- ZEIT ---
+        time_str = _find_time(text)
+
+        # --- VENUE & EXTRA ---
+        venue_match = re.search(r"Uhr\s*,\s*(.+)", text)
         venue = venue_match.group(1).strip() if venue_match else None
-        if venue:
-            extra = f"{extra} – {venue}" if extra else venue
- 
-        # --- DETAIL URL: resolve relative href against base ---
+
+        # --- TITEL ---
+        title_match = re.match(
+            r"^(?:Mo|Di|Mi|Do|Fr|Sa|So)\s+\d{2}\s+(?:\S.*?\s+)??([\w].+?)\s+\d{1,2}[.:]\d{2}\s*Uhr",
+            text
+        )
+        if title_match:
+            title = title_match.group(1).strip()
+        else:
+            # Fallback: Tokens 2..n-3 (ohne Wochentag, Tag, Zeit, Venue)
+            title = " ".join(tokens[2:-3]).strip()
+
+        # --- KOMPONIST aus <h4> (falls vorhanden) ---
+        h4 = a.find("h4")
+        extra = h4.get_text(strip=True) if h4 else venue
+
+        # --- URL ---
         detail_url = urljoin("https://oper-frankfurt.de/de/spielplan/", a["href"])
- 
-        # --- TICKET LINK: sibling <a> pointing to eventim (same parent div) ---
-        ticket_url = detail_url
-        parent_div = a.parent
-        if parent_div:
-            ticket_a = parent_div.find("a", href=re.compile(r"eventim", re.I))
-            if ticket_a and ticket_a is not a:
-                ticket_url = ticket_a["href"]
- 
-        performances.append(Performance(theatre_name, title, time_str, ticket_url, extra))
- 
+
+        performances.append(Performance(theatre_name, title, time_str, detail_url, extra or venue))
+
     return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
