@@ -657,6 +657,173 @@ def parse_komoedie(theatre_name: str, url: str, target: date) -> List[Performanc
     return _dedupe(performances)
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Parser: Die Schmiere
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_die_schmiere(theatre_name: str, url: str, target: date) -> List[Performance]:
+    try:
+        soup = _get_soup(url)
+    except Exception as e:
+        logger.error("%s: %s", theatre_name, e)
+        return []
+
+    month_name = [
+        k.capitalize() for k, v in DE_MONTHS.items()
+        if v == target.month and len(k) >= 3
+    ][0]
+
+    # Matches: "Fr. 8. Mai: 20 Uhr:" or "So. 10. Mai: 19 Uhr:"
+    date_pattern = re.compile(
+        rf"(?:Mo|Di|Mi|Do|Fr|Sa|So)\.\s+{target.day}\.\s+{re.escape(month_name)}:\s+(\d{{1,2}})\s+Uhr",
+        re.IGNORECASE,
+    )
+
+    # Extract all text lines from bold/strong elements — these carry dates AND titles
+    # Plain text nodes carry subtitles/genres
+    # Strategy: collect ALL leaf-level text blocks in document order, then
+    # find the date line and harvest the next non-empty lines as subtitle + title.
+
+    # Collect all text segments in document order, tagging each as bold or plain
+    segments = []  # list of (is_bold: bool, text: str)
+    for el in soup.find_all(string=True):
+        text = el.strip()
+        if not text:
+            continue
+        is_bold = el.parent.name in ("strong", "b") or (
+            el.parent.parent and el.parent.parent.name in ("strong", "b")
+        )
+        segments.append((is_bold, text))
+
+    performances = []
+
+    for i, (is_bold, text) in enumerate(segments):
+        if not is_bold:
+            continue
+        m = date_pattern.search(text)
+        if not m:
+            continue
+
+        time_str = f"{int(m.group(1)):02d}:00"
+
+        # Look ahead: collect up to 4 non-empty segments to find subtitle + title
+        title = None
+        extra_parts = []
+        for j in range(i + 1, min(i + 8, len(segments))):
+            _, seg_text = segments[j]
+            seg_is_bold = segments[j][0]
+            seg_text = seg_text.strip()
+            if not seg_text:
+                continue
+            # Skip if it looks like the next date entry
+            if date_pattern.search(seg_text) or re.match(
+                r"(?:Mo|Di|Mi|Do|Fr|Sa|So)\.\s+\d+\.", seg_text
+            ):
+                break
+            if seg_is_bold and title is None:
+                title = seg_text
+            elif title is None:
+                # plain text before the bold title = genre/subtitle → extra
+                extra_parts.append(seg_text.rstrip(":"))
+            else:
+                # plain text after title = cast / description
+                extra_parts.append(seg_text)
+                break  # one description line is enough
+
+        if not title:
+            continue
+
+        extra = " | ".join(p for p in extra_parts if p) or None
+
+        performances.append(Performance(
+            theatre=theatre_name,
+            title=title,
+            time=time_str,
+            url="https://die-schmiere.reservix.de/events",
+            extra=extra,
+        ))
+
+    return _dedupe(performances)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parser: Internationales Theater Frankfurt
+# ─────────────────────────────────────────────────────────────────────────────
+
+def parse_internationales_theater(theatre_name: str, url: str, target: date) -> List[Performance]:
+    try:
+        soup = _get_soup(url)
+    except Exception as e:
+        logger.error("%s: %s", theatre_name, e)
+        return []
+
+    # Date pattern as it appears: "So, 10. Mai. 2026 / 18:00 Uhr"
+    date_pattern = re.compile(
+        rf"(?:Mo|Di|Mi|Do|Fr|Sa|So),\s+{target.day}\.\s+(?:\w+\s+)?(\w+?)\.\s+{target.year}",
+        re.IGNORECASE,
+    )
+
+    performances = []
+
+    for h3 in soup.find_all("h3"):
+        title_el = h3.find("a", href=True)
+        if not title_el:
+            continue
+
+        # Walk up to find a container that holds the date text
+        container = h3.parent
+        found = False
+        for _ in range(5):
+            if date_pattern.search(container.get_text(" ", strip=True)):
+                found = True
+                break
+            if container.parent:
+                container = container.parent
+        if not found:
+            continue
+
+        container_text = container.get_text(" ", strip=True)
+        m = date_pattern.search(container_text)
+        if not m:
+            continue
+
+        # Verify month matches target
+        if DE_MONTH_ABBR.get(m.group(1).lower()[:3]) != target.month:
+            continue
+
+        # Skip cancelled events
+        if re.search(r"Abgesagt", container_text, re.IGNORECASE):
+            continue
+
+        title = title_el.get_text(" ", strip=True)
+        detail_url = urljoin("https://internationales-theater.de", title_el["href"])
+
+        # Extract time directly from the date line to avoid _find_time
+        # getting confused by the day number (e.g. "10." → "10:")
+        time_str = "?"
+        time_match = re.search(r"/\s*(\d{1,2}:\d{2})\s*Uhr", container_text)
+        if time_match:
+            time_str = time_match.group(1)
+
+        # Subtitle from h4 (if present inside the container)
+        subtitle = None
+        h4 = container.find("h4")
+        if h4:
+            subtitle = h4.get_text(" ", strip=True)
+
+        # Ticket link
+        ticket_el = container.find("a", string=re.compile(r"Infos\s*&\s*Tickets", re.I))
+        ticket_url = ticket_el["href"] if ticket_el else detail_url
+
+        performances.append(Performance(
+            theatre=theatre_name,
+            title=title,
+            time=time_str,
+            url=ticket_url,
+            extra=subtitle,
+        ))
+
+    return _dedupe(performances)
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Dispatcher – maps parser name → function
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -669,7 +836,9 @@ _PARSERS = {
     "stalburg":             parse_stalburg,
     "oper_frankfurt":       parse_oper_frankfurt,
     "neues_theater_hoechst": parse_neues_theater_hoechst,
-    "komoedie":             parse_komoedie
+    "komoedie":             parse_komoedie,
+    "die_schmiere":         parse_die_schmiere,
+    "internationales_theater": parse_internationales_theater,
 }
 
 

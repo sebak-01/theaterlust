@@ -70,6 +70,16 @@ THEATRES = [
         "url":    "https://diekomoedie.de/tickets/",
         "parser": "komoedie",
     },
+    {
+        "name": "Die Schmiere",
+        "url": "https://www.die-schmiere.de/veranstaltungen",
+        "parser": "die_schmiere",
+    },
+    {
+        "name": "Internationales Theater Frankfurt",
+        "url": "https://internationales-theater.de/programm-ticketkauf",
+        "parser": "internationales_theater",
+    },
 
     # ── Add new theatres below this line ────────────────────────────────────
     #
